@@ -17,6 +17,21 @@
 #include "LowpassFilter.hpp"
 #include "PositionSensor.hpp"
 
+
+#define B
+// #define A
+
+const char *SSID = "Bitwäscherei-Bau";
+const char *PWD = "clubmate42";
+
+#ifdef B 
+const char *HOSTNAME = "pantilt-robot_b";
+#endif
+
+#ifdef  A
+A const char *HOSTNAME = "pantilt-robot_a";
+#endif
+
 const uint8_t PAN_EN_PIN = 23;
 const uint8_t PAN_DIR_PIN = 21;
 const uint8_t PAN_PULSE_PIN = 19;
@@ -35,12 +50,11 @@ const uint16_t SENS_THRESH = 3000;
 const uint8_t MICROSTEPS = 16;
 const float GEAR_RATIO = 4*4;
 
-uint32_t acceleration = 60*MICROSTEPS*GEAR_RATIO;
-uint32_t speed = 300*MICROSTEPS*GEAR_RATIO;
+uint32_t acceleration = 60.0 / 360 * 200 * MICROSTEPS*GEAR_RATIO;
+uint32_t speed = 100.0 / 360 * 200 * MICROSTEPS*GEAR_RATIO;
 
-const char *SSID = "Bitwäscherei-Bau";
-const char *PWD = "clubmate42";
-const char *HOSTNAME = "pantilt-robot";
+int32_t MAX_ACCEL = 90.0 / 360 * 200 * MICROSTEPS*GEAR_RATIO;
+int32_t MAX_SPEED = 100.0 / 360 * 200 * MICROSTEPS*GEAR_RATIO;
 
 const int UDP_PORT = 9870;
 const IPAddress udp_server_ip(172, 31, 33, 194);
@@ -49,6 +63,7 @@ WiFiUDP udp;
 StaticJsonDocument<1500> telemetry;
 MsgPack::Packer packer;
 
+enum MSG_COMMAND { HOME = 0, PT = 1, PT_ACCEL = 2, P_ACCEL = 3, T_ACCEL = 4};
 StaticJsonDocument<500> rcv_json;
 uint8_t udp_rcv_buffer[1500];
 MsgPack::Unpacker unpacker;
@@ -68,8 +83,19 @@ LowpassFilter tilt_pot_filter(SENSOR_PERIOD_US/1e6f, 2);
 float pan_in = 0;
 float tilt_in = 0;
 
-PositionSensor pan_sensor;
-PositionSensor tilt_sensor;
+#ifdef B
+PositionSensor pan_sensor(2000, 3500);
+PositionSensor tilt_sensor(1300, 3500);
+float base_pan = 90;
+float base_tilt = 90;
+#endif
+#ifdef A
+PositionSensor pan_sensor();
+PositionSensor tilt_sensor();
+float base_pan = 90;
+float base_tilt = 270;
+#endif
+
 
 FastAccelStepper* init_stepper(uint8_t pulse_pin, uint8_t dir_pin, uint8_t en_pin)
 {
@@ -93,7 +119,7 @@ void home_axis(FastAccelStepper* stepper, PositionSensor* sensor)
 {
     printf("start home\n");
 
-    stepper->setSpeedInHz(400*MICROSTEPS);
+    stepper->setSpeedInHz(100*MICROSTEPS);
     delay(5);
     stepper->runBackward();
     while (sensor->has_changed_state == false) { delay(2); }
@@ -103,14 +129,34 @@ void home_axis(FastAccelStepper* stepper, PositionSensor* sensor)
     printf("one step done %f\n", sensor->last_fixed_position);
     if (sensor->last_fixed_position != 0)
     {
-        stepper->setSpeedInHz(400*MICROSTEPS);
+        stepper->setSpeedInHz(100*MICROSTEPS);
         delay(5);
         stepper->runBackward();
         while (sensor->has_changed_state == false) { delay(2); }
     }
     stepper->forceStopAndNewPosition(0);
 
-    printf("done home %f\n", sensor->last_fixed_position);
+    printf("done home %f\n");
+}
+
+void home_and_move_to_start()
+{
+    home_axis(tilt_stepper, &tilt_sensor);
+    home_axis(pan_stepper, &pan_sensor);
+
+    pan_stepper->setAcceleration(acceleration);
+    pan_stepper->setSpeedInHz(speed);
+    tilt_stepper->setAcceleration(acceleration);
+    tilt_stepper->setSpeedInHz(speed);
+
+    int32_t pan_position = base_pan / 360 * 200 * MICROSTEPS * GEAR_RATIO;
+    pan_stepper->moveTo(pan_position, false);
+
+    int32_t tilt_position = base_tilt / 360 * 200 * MICROSTEPS * GEAR_RATIO;
+    tilt_stepper->moveTo(tilt_position, true);
+
+    pan_stepper->forceStopAndNewPosition(0);
+    tilt_stepper->forceStopAndNewPosition(0);
 }
 
 void timer_tick(void* arg)
@@ -187,48 +233,11 @@ void loop()
     if (abs(pan_in) < 0.08f) pan_in = 0;
     if (abs(tilt_in) < 0.08f) tilt_in = 0;
 
-    if (control_mode == CONTROL_MODE_SPEED) {
-        float pan_speed = pan_in * 200 * 10 * MICROSTEPS;
-        float tilt_speed = tilt_in * 200 * 10 * MICROSTEPS;
-
-        pan_stepper->setSpeedInHz(abs(pan_speed));
-        // tilt_stepper->moveByAcceleration(99999, true);
-    
-        int8_t res;
-        if (pan_speed > 0)
-        {
-            res = pan_stepper->runForward();
-        }
-        else if (pan_speed < 0)
-        {
-            res = pan_stepper->runBackward();
-        }
-        else
-        {
-            pan_stepper->forceStop();
-        }
+    if (control_mode == CONTROL_MODE_SPEED) 
+    {
     }
     else if (control_mode == CONTROL_MODE_POSITION)
     {
-        pan_stepper->setAcceleration(100*MICROSTEPS*16);
-        pan_stepper->setSpeedInHz(200*MICROSTEPS*8);
-
-        int32_t pan_position = pan_in * 100 * MICROSTEPS * GEAR_RATIO;
-
-        if (abs(pan_position - pan_stepper->getPositionAfterCommandsCompleted()) > 30*MICROSTEPS)
-        {
-            pan_stepper->moveTo((int32_t)pan_position);
-        }
-
-        tilt_stepper->setAcceleration(100*MICROSTEPS*16);
-        tilt_stepper->setSpeedInHz(200*MICROSTEPS*8);
-
-        int32_t tilt_position = tilt_in * 100 * MICROSTEPS * GEAR_RATIO;
-
-        if (abs(tilt_position - tilt_stepper->getPositionAfterCommandsCompleted()) > 30*MICROSTEPS)
-        {
-            tilt_stepper->moveTo((int32_t)tilt_position);
-        }
     }
     else if (control_mode == CONTROL_MODE_UDP)
     {
@@ -254,13 +263,12 @@ void loop()
             if (unpacker.from_array(cmd, prm))
             {
                 Serial.println(cmd);
-                if (cmd == 0)
+                if (cmd == MSG_COMMAND::HOME)
                 {
                     Serial.println("home");
-                    home_axis(tilt_stepper, &tilt_sensor);
-                    home_axis(pan_stepper, &pan_sensor);
+                    home_and_move_to_start();
                 }
-                else if (cmd == 1)
+                else if (cmd == MSG_COMMAND::PT)
                 {
                     Serial.print("move");
                     float pan = prm[0];
@@ -273,6 +281,56 @@ void loop()
 
                     int32_t tilt_position = tilt / 360 * 200 * MICROSTEPS * GEAR_RATIO;
                     tilt_stepper->moveTo(tilt_position);
+                }
+                else if (cmd == MSG_COMMAND::PT_ACCEL)
+                {
+                    Serial.print("move accel");
+                    float pan = prm[0];
+                    float tilt = prm[1];
+                    float pan_accel = prm[2];
+                    float tilt_accel = prm[3];
+
+                    if (pan > 360 || pan < -360)
+                        pan = 0;
+                    if (tilt > 360 || tilt < -360)
+                        tilt = 0;
+
+                    int32_t pan_position = pan / 360 * 200 * MICROSTEPS * GEAR_RATIO;
+                    pan_stepper->setAcceleration(pan_accel / 360 * 200 * MICROSTEPS * GEAR_RATIO);
+                    pan_stepper->setSpeedInHz(UINT32_MAX);
+                    pan_stepper->moveTo(pan_position);
+
+                    int32_t tilt_position = tilt / 360 * 200 * MICROSTEPS * GEAR_RATIO;
+                    tilt_stepper->setAcceleration(tilt_accel / 360 * 200 * MICROSTEPS * GEAR_RATIO);
+                    tilt_stepper->setSpeedInHz(UINT32_MAX);
+                    tilt_stepper->moveTo(tilt_position);
+
+                }
+                else if (cmd == MSG_COMMAND::P_ACCEL)
+                {
+                    float pos = prm[0];
+                    float accel = prm[1];
+
+                    if (pos > 360 || pos < -360)
+                        pos = 0;
+
+                    int32_t position = pos / 360 * 200 * MICROSTEPS * GEAR_RATIO;
+                    pan_stepper->setAcceleration(min(MAX_ACCEL, (int32_t)(accel  / 360 * 200 * MICROSTEPS * GEAR_RATIO)));
+                    pan_stepper->setSpeedInHz(MAX_SPEED);
+                    pan_stepper->moveTo(position);
+                }
+                else if (cmd == MSG_COMMAND::T_ACCEL)
+                {
+                    float pos = prm[0];
+                    float accel = prm[1];
+
+                    if (pos > 360 || pos < -360)
+                        pos = 0;
+
+                    int32_t position = pos / 360 * 200 * MICROSTEPS * GEAR_RATIO;
+                    tilt_stepper->setAcceleration(min(MAX_ACCEL, (int32_t)(accel  / 360 * 200 * MICROSTEPS * GEAR_RATIO)));
+                    tilt_stepper->setSpeedInHz(MAX_SPEED);
+                    tilt_stepper->moveTo(position);
                 }
             }
         }

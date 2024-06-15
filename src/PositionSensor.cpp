@@ -1,7 +1,14 @@
 #include "PositionSensor.hpp"
 
-PositionSensor::PositionSensor(/* args */) 
-: lpf(SENSOR_PERIOD_US/1e6f, LPF_CUTOFF_FREQ)
+PositionSensor::PositionSensor(float low_threshold, float high_threshold)
+    : lpf(SENSOR_PERIOD_US / 1e6f, LPF_CUTOFF_FREQ)
+{
+    this->low_threshold = low_threshold;
+    this->high_threshold = high_threshold;
+}
+
+PositionSensor::PositionSensor(/* args */)
+    : lpf(SENSOR_PERIOD_US / 1e6f, LPF_CUTOFF_FREQ)
 {
 }
 

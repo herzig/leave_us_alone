@@ -11,10 +11,13 @@ class PositionSensor
 {
 private:
     LowpassFilter lpf;
-    float low_threshold = 3000;
-    float high_threshold = 3500;
 
 public:
+
+    PositionSensor(float low_threshold, float high_threshold);
+
+    float low_threshold = 3000;
+    float high_threshold = 3500;
 
     enum Flank { FLANK_NONE, FLANK_POSITIVE, FLANK_NEGATIVE };
 
