@@ -17,9 +17,28 @@
 #include "LowpassFilter.hpp"
 #include "PositionSensor.hpp"
 
+#define A
+#define ESP32_POE_ISO
+#define USE_ETH
 
-#define B
-// #define A
+const int UDP_PORT = 9870;
+const int TCP_PORT = 9870;
+
+#ifdef USE_ETH
+#include <ETH.h>
+#ifdef A
+const IPAddress ip(10, 1, 1, 11);
+#else 
+const IPAddress ip(10, 1, 1, 12);
+#endif
+const IPAddress subnet(255,255,255,0);
+const IPAddress udp_server_ip(10, 1, 1, 2);
+#else
+#include <WiFi.h>
+const IPAddress udp_server_ip(172, 31, 33, 194);
+#endif
+
+WiFiUDP udp;
 
 const char *SSID = "Bitwäscherei-Bau";
 const char *PWD = "clubmate42";
@@ -29,9 +48,21 @@ const char *HOSTNAME = "pantilt-robot_b";
 #endif
 
 #ifdef  A
-A const char *HOSTNAME = "pantilt-robot_a";
+const char *HOSTNAME = "pantilt-robot_a";
 #endif
 
+#ifdef ESP32_POE_ISO
+const uint8_t PAN_EN_PIN = 33;
+const uint8_t PAN_DIR_PIN = 32;
+const uint8_t PAN_PULSE_PIN = 16;
+
+const uint8_t TILT_EN_PIN = 15;
+const uint8_t TILT_DIR_PIN = 14;
+const uint8_t TILT_PULSE_PIN = 13;
+
+const uint8_t PAN_SENS_IN = 36;
+const uint8_t TILT_SENS_IN = 35;
+#else
 const uint8_t PAN_EN_PIN = 23;
 const uint8_t PAN_DIR_PIN = 21;
 const uint8_t PAN_PULSE_PIN = 19;
@@ -40,37 +71,40 @@ const uint8_t TILT_EN_PIN = 18;
 const uint8_t TILT_DIR_PIN = 5;
 const uint8_t TILT_PULSE_PIN = 17;
 
-const uint8_t PAN_POT_PIN = 36;
-const uint8_t TILT_POT_PIN = 39;
-
 const uint8_t PAN_SENS_IN = 34;
 const uint8_t TILT_SENS_IN = 35;
+#endif
 
 const uint16_t SENS_THRESH = 3000;
 const uint8_t MICROSTEPS = 16;
 const float GEAR_RATIO = 4*4;
 
-uint32_t acceleration = 60.0 / 360 * 200 * MICROSTEPS*GEAR_RATIO;
-uint32_t speed = 100.0 / 360 * 200 * MICROSTEPS*GEAR_RATIO;
+const float DEG2STEPS = 1.0f / 360.0f * 200.0f * MICROSTEPS * GEAR_RATIO;
+const float STEPS2DEG = 1.0f / DEG2STEPS;
 
-int32_t MAX_ACCEL = 90.0 / 360 * 200 * MICROSTEPS*GEAR_RATIO;
-int32_t MAX_SPEED = 100.0 / 360 * 200 * MICROSTEPS*GEAR_RATIO;
+const int32_t DEFAULT_ACCEL = 50.0f;
+const int32_t DEFAULT_SPEED = 60.0f;
 
-const int UDP_PORT = 9870;
-const IPAddress udp_server_ip(172, 31, 33, 194);
-WiFiUDP udp;
+const float MAX_PAN = 540.0f;
+const float MAX_TILT = 540.0f;
+
+const float MAX_ACCEL = 90.0f; 
+const float MAX_SPEED = 100.0f;
+
+// WiFiServer tcp(TCP_PORT);
+//NetworkServer server;
 
 StaticJsonDocument<1500> telemetry;
 MsgPack::Packer packer;
 
-enum MSG_COMMAND { HOME = 0, PT = 1, PT_ACCEL = 2, P_ACCEL = 3, T_ACCEL = 4};
+enum MSG_COMMAND { HOME = 0, PT = 1, PT_ACCEL = 2, PAN_ACCEL = 3, TILT_ACCEL = 4};
 StaticJsonDocument<500> rcv_json;
 uint8_t udp_rcv_buffer[1500];
 MsgPack::Unpacker unpacker;
 
 const uint64_t SENSOR_PERIOD_US = 5000;
 
-enum ControlMode { CONTROL_MODE_UDP, CONTROL_MODE_POSITION, CONTROL_MODE_SPEED, };
+enum ControlMode { CONTROL_MODE_UDP };
 ControlMode control_mode = CONTROL_MODE_UDP;
 
 FastAccelStepperEngine engine = FastAccelStepperEngine();
@@ -78,22 +112,20 @@ FastAccelStepperEngine engine = FastAccelStepperEngine();
 FastAccelStepper* pan_stepper = nullptr;
 FastAccelStepper* tilt_stepper = nullptr;
 
-LowpassFilter pan_pot_filter(SENSOR_PERIOD_US/1e6f, 2);
-LowpassFilter tilt_pot_filter(SENSOR_PERIOD_US/1e6f, 2);
-float pan_in = 0;
-float tilt_in = 0;
+unsigned long last_telemetry_time = 0;
 
 #ifdef B
-PositionSensor pan_sensor(2000, 3500);
-PositionSensor tilt_sensor(1300, 3500);
+PositionSensor pan_sensor(3100, 3500);
+PositionSensor tilt_sensor(2500, 3500);
 float base_pan = 90;
 float base_tilt = 90;
 #endif
+
 #ifdef A
-PositionSensor pan_sensor();
-PositionSensor tilt_sensor();
+PositionSensor pan_sensor(3800, 4000);
+PositionSensor tilt_sensor(2800, 3500);
 float base_pan = 90;
-float base_tilt = 270;
+float base_tilt = 90;
 #endif
 
 
@@ -119,7 +151,7 @@ void home_axis(FastAccelStepper* stepper, PositionSensor* sensor)
 {
     printf("start home\n");
 
-    stepper->setSpeedInHz(100*MICROSTEPS);
+    stepper->setSpeedInHz(9 * DEG2STEPS);
     delay(5);
     stepper->runBackward();
     while (sensor->has_changed_state == false) { delay(2); }
@@ -129,7 +161,7 @@ void home_axis(FastAccelStepper* stepper, PositionSensor* sensor)
     printf("one step done %f\n", sensor->last_fixed_position);
     if (sensor->last_fixed_position != 0)
     {
-        stepper->setSpeedInHz(100*MICROSTEPS);
+        stepper->setSpeedInHz(9 * DEG2STEPS);
         delay(5);
         stepper->runBackward();
         while (sensor->has_changed_state == false) { delay(2); }
@@ -139,22 +171,24 @@ void home_axis(FastAccelStepper* stepper, PositionSensor* sensor)
     printf("done home %f\n");
 }
 
+void set_speed_accel(FastAccelStepper* stepper, float speed, float accel)
+{
+    stepper->setSpeedInHz(speed * DEG2STEPS);
+    stepper->setAcceleration(accel * DEG2STEPS);
+}
+
 void home_and_move_to_start()
 {
     home_axis(tilt_stepper, &tilt_sensor);
     home_axis(pan_stepper, &pan_sensor);
 
-    pan_stepper->setAcceleration(acceleration);
-    pan_stepper->setSpeedInHz(speed);
-    tilt_stepper->setAcceleration(acceleration);
-    tilt_stepper->setSpeedInHz(speed);
+    set_speed_accel(pan_stepper, DEFAULT_SPEED, DEFAULT_ACCEL);
+    set_speed_accel(tilt_stepper, DEFAULT_SPEED, DEFAULT_ACCEL);
 
-    int32_t pan_position = base_pan / 360 * 200 * MICROSTEPS * GEAR_RATIO;
-    pan_stepper->moveTo(pan_position, false);
+    pan_stepper->moveTo(base_pan * DEG2STEPS, false);
+    tilt_stepper->moveTo(base_tilt * DEG2STEPS, true);
 
-    int32_t tilt_position = base_tilt / 360 * 200 * MICROSTEPS * GEAR_RATIO;
-    tilt_stepper->moveTo(tilt_position, true);
-
+    delay(1);
     pan_stepper->forceStopAndNewPosition(0);
     tilt_stepper->forceStopAndNewPosition(0);
 }
@@ -168,32 +202,53 @@ void timer_tick(void* arg)
     uint16_t tilt_sens = analogRead(TILT_SENS_IN);
     int32_t tilt_speed = tilt_stepper->getCurrentSpeedInMilliHz();
     tilt_sensor.update(tilt_sens, tilt_speed);
+}
 
-    pan_in = pan_pot_filter.filter(analogRead(PAN_POT_PIN) / 4096.0f * 2 - 1);
-    tilt_in = tilt_pot_filter.filter(analogRead(TILT_POT_PIN) / 4096.0f * 2 - 1);
+// WARNING: WiFiEvent is called from a separate FreeRTOS task (thread)!
+void WiFiEvent(WiFiEvent_t event)
+{
+  switch (event) {
+    case ARDUINO_EVENT_ETH_START:
+      Serial.println("ETH Started");
+      // The hostname must be set after the interface is started, but needs
+      // to be set before DHCP, so set it from the event handler thread.
+      ETH.setHostname("esp32-ethernet");
+      break;
+    case ARDUINO_EVENT_ETH_CONNECTED:
+      Serial.println("ETH Connected");
+      break;
+    case ARDUINO_EVENT_ETH_GOT_IP:
+      Serial.println("ETH Got IP");
+      //ETH.printInfo(Serial);
+      break;
+    case ARDUINO_EVENT_ETH_DISCONNECTED:
+      Serial.println("ETH Disconnected");
+      break;
+    case ARDUINO_EVENT_ETH_STOP:
+      Serial.println("ETH Stopped");
+      break;
+    default:
+      break;
+  }
 }
 
 void setup() 
 {
-    pinMode(PAN_POT_PIN, INPUT);
-    pinMode(TILT_POT_PIN, INPUT);
-
     pinMode(PAN_DIR_PIN, OUTPUT);
     pinMode(PAN_EN_PIN, OUTPUT);
     pinMode(PAN_PULSE_PIN, OUTPUT);
+    pinMode(TILT_DIR_PIN, OUTPUT);
+    pinMode(TILT_EN_PIN, OUTPUT);
+    pinMode(TILT_PULSE_PIN, OUTPUT);
 
     pinMode(PAN_SENS_IN, INPUT);
+    pinMode(TILT_SENS_IN, INPUT);
 
     engine.init();
     pan_stepper = init_stepper(PAN_PULSE_PIN, PAN_DIR_PIN, PAN_EN_PIN);
     tilt_stepper = init_stepper(TILT_PULSE_PIN, TILT_DIR_PIN, TILT_EN_PIN);
 
     Serial.begin(115200);
-
-    // auto sens_publisher = MsgPacketizer::publish(Serial, PAN_SENSOR_CHANNEL, filtered_pan_sens, raw_pan_sens);
-    // sens_publisher->setFrameRate(60);
-
-    // home_pan_axis();
 
     // sens timer
     esp_timer_create_args_t timer_args;
@@ -205,6 +260,15 @@ void setup()
     // ESP_LOGI(TAG, "started sensor timer");
 
     // WIFI
+    #ifdef USE_ETH
+    delay(500);
+    WiFi.onEvent(WiFiEvent);  // Will call WiFiEvent() from another thread.
+    delay(500);
+    ETH.begin();
+    delay(500);
+    ETH.config(ip, (uint32_t)0, subnet);
+    Serial.print("ETH Ip addr:"); Serial.println(ETH.localIP());
+    #else
     Serial.print("Connecting to ");
     Serial.println(SSID);
     WiFi.setHostname(HOSTNAME);
@@ -216,6 +280,7 @@ void setup()
     }
     Serial.print("Connected. IP: ");
     Serial.println(WiFi.localIP());
+    #endif
 
     udp.setTimeout(200);
     udp.begin(UDP_PORT);
@@ -223,39 +288,19 @@ void setup()
     delay(50);
     pan_sensor.has_changed_state = false;
     //home_pan_axis();
-
 }
 
 void loop() 
 {
-    //MsgPacketizer::update();
-
-    if (abs(pan_in) < 0.08f) pan_in = 0;
-    if (abs(tilt_in) < 0.08f) tilt_in = 0;
-
-    if (control_mode == CONTROL_MODE_SPEED) 
+    if (control_mode == CONTROL_MODE_UDP)
     {
-    }
-    else if (control_mode == CONTROL_MODE_POSITION)
-    {
-    }
-    else if (control_mode == CONTROL_MODE_UDP)
-    {
-
-        pan_stepper->setAcceleration(acceleration);
-        pan_stepper->setSpeedInHz(speed);
-
-        tilt_stepper->setAcceleration(acceleration);
-        tilt_stepper->setSpeedInHz(speed);
-
-        unpacker.clear();
         if (udp.parsePacket()) 
         {
             Serial.println("new packet");
             int bytes = udp.read(udp_rcv_buffer, 1500);
             Serial.println(bytes);
             Serial.println((char*)udp_rcv_buffer);
-            unpacker.feed(udp_rcv_buffer, 1500);
+            unpacker.feed(udp_rcv_buffer, bytes);
 
             uint8_t cmd;
             MsgPack::arr_t<float> prm;
@@ -273,14 +318,19 @@ void loop()
                     Serial.print("move");
                     float pan = prm[0];
                     float tilt = prm[1];
-                    Serial.print(pan); Serial.print(" ");
-                    Serial.println(tilt);
+                    Serial.print(pan); Serial.print(" "); Serial.println(tilt);
 
-                    int32_t pan_position = pan / 360 * 200 * MICROSTEPS * GEAR_RATIO;
-                    pan_stepper->moveTo(pan_position);
+                    set_speed_accel(pan_stepper, DEFAULT_SPEED, DEFAULT_ACCEL);
+                    set_speed_accel(tilt_stepper, DEFAULT_SPEED, DEFAULT_ACCEL);
 
-                    int32_t tilt_position = tilt / 360 * 200 * MICROSTEPS * GEAR_RATIO;
-                    tilt_stepper->moveTo(tilt_position);
+                    if (abs(pan) < MAX_PAN)
+                    {
+                        pan_stepper->moveTo(pan * DEG2STEPS);
+                    }
+                    if (abs(tilt) < MAX_TILT)
+                    {
+                        tilt_stepper->moveTo(tilt * DEG2STEPS);
+                    }
                 }
                 else if (cmd == MSG_COMMAND::PT_ACCEL)
                 {
@@ -290,75 +340,73 @@ void loop()
                     float pan_accel = prm[2];
                     float tilt_accel = prm[3];
 
-                    if (pan > 360 || pan < -360)
-                        pan = 0;
-                    if (tilt > 360 || tilt < -360)
-                        tilt = 0;
+                    if (abs(pan) < MAX_PAN)
+                    {
+                        set_speed_accel(pan_stepper, MAX_SPEED, pan_accel);
+                        pan_stepper->moveTo(pan * DEG2STEPS);
+                    }
 
-                    int32_t pan_position = pan / 360 * 200 * MICROSTEPS * GEAR_RATIO;
-                    pan_stepper->setAcceleration(pan_accel / 360 * 200 * MICROSTEPS * GEAR_RATIO);
-                    pan_stepper->setSpeedInHz(UINT32_MAX);
-                    pan_stepper->moveTo(pan_position);
-
-                    int32_t tilt_position = tilt / 360 * 200 * MICROSTEPS * GEAR_RATIO;
-                    tilt_stepper->setAcceleration(tilt_accel / 360 * 200 * MICROSTEPS * GEAR_RATIO);
-                    tilt_stepper->setSpeedInHz(UINT32_MAX);
-                    tilt_stepper->moveTo(tilt_position);
+                    if (abs(tilt) < MAX_TILT)
+                    {
+                        set_speed_accel(tilt_stepper, MAX_SPEED, tilt_accel);
+                        tilt_stepper->moveTo(tilt * DEG2STEPS);
+                    }
 
                 }
-                else if (cmd == MSG_COMMAND::P_ACCEL)
+                else if (cmd == MSG_COMMAND::PAN_ACCEL)
                 {
                     float pos = prm[0];
                     float accel = prm[1];
 
-                    if (pos > 360 || pos < -360)
-                        pos = 0;
-
-                    int32_t position = pos / 360 * 200 * MICROSTEPS * GEAR_RATIO;
-                    pan_stepper->setAcceleration(min(MAX_ACCEL, (int32_t)(accel  / 360 * 200 * MICROSTEPS * GEAR_RATIO)));
-                    pan_stepper->setSpeedInHz(MAX_SPEED);
-                    pan_stepper->moveTo(position);
+                    if (abs(pos) < MAX_PAN)
+                    {
+                        set_speed_accel(pan_stepper, MAX_SPEED, accel);
+                        pan_stepper->moveTo(pos * DEG2STEPS);
+                    }
                 }
-                else if (cmd == MSG_COMMAND::T_ACCEL)
+                else if (cmd == MSG_COMMAND::TILT_ACCEL)
                 {
                     float pos = prm[0];
                     float accel = prm[1];
 
-                    if (pos > 360 || pos < -360)
-                        pos = 0;
-
-                    int32_t position = pos / 360 * 200 * MICROSTEPS * GEAR_RATIO;
-                    tilt_stepper->setAcceleration(min(MAX_ACCEL, (int32_t)(accel  / 360 * 200 * MICROSTEPS * GEAR_RATIO)));
-                    tilt_stepper->setSpeedInHz(MAX_SPEED);
-                    tilt_stepper->moveTo(position);
+                    if (abs(pos) < MAX_PAN)
+                    {
+                        set_speed_accel(tilt_stepper, MAX_SPEED, accel);
+                        tilt_stepper->moveTo(pos * DEG2STEPS);
+                    }
                 }
             }
         }
-
         udp.flush();
 
     }
 
-    telemetry["timestamp"] = millis()/1000.0f;
-    telemetry["pan_pos"] = pan_stepper->getCurrentPosition() / (200*MICROSTEPS*GEAR_RATIO) * 360;
-    telemetry["tilt_pos"] = tilt_stepper->getCurrentPosition() / (200*MICROSTEPS*GEAR_RATIO) * 360;
+    if (millis() - last_telemetry_time > 50)
+    {
+        telemetry["timestamp"] = millis()/1000.0f;
+        telemetry["pan"] = pan_stepper->getCurrentPosition() * STEPS2DEG;
+        telemetry["pan_accel"] = pan_stepper->getAcceleration();
+        telemetry["tilt"] = tilt_stepper->getCurrentPosition() * STEPS2DEG;
+        telemetry["tilt_accel"] = tilt_stepper->getAcceleration();
 
-    telemetry["pan_sens"] = pan_sensor.raw_val;
-    telemetry["pan_sens_filtered"] = pan_sensor.filtered_val;
-    telemetry["pan_sens_state"] = pan_sensor.state;
-    telemetry["pan_sens_position"] = tilt_sensor.last_fixed_position;
+        // telemetry["pan_sens"] = pan_sensor.raw_val;
+        telemetry["pan_sens_f"] = pan_sensor.filtered_val;
+        telemetry["pan_sens_state"] = pan_sensor.state;
+        // telemetry["pan_sens_position"] = tilt_sensor.last_fixed_position;
 
-    telemetry["tilt_sens"] = tilt_sensor.raw_val;
-    telemetry["tilt_sens_filtered"] = tilt_sensor.filtered_val;
-    telemetry["tilt_sens_state"] = tilt_sensor.state;
-    telemetry["tilt_sens_position"] = tilt_sensor.last_fixed_position;
+        // telemetry["tilt_sens"] = tilt_sensor.raw_val;
+        telemetry["tilt_sens_f"] = tilt_sensor.filtered_val;
+        telemetry["tilt_sens_state"] = tilt_sensor.state;
+        // telemetry["tilt_sens_position"] = tilt_sensor.last_fixed_position;
 
-    packer.clear();
-    packer.serialize_arduinojson(telemetry);
+        packer.clear();
+        packer.serialize_arduinojson(telemetry);
 
-    udp.beginPacket(udp_server_ip, UDP_PORT);
-    udp.write(packer.data(), packer.size());
-    udp.endPacket();
+        udp.beginPacket(udp_server_ip, UDP_PORT);
+        udp.write(packer.data(), packer.size());
+        udp.endPacket();
+        last_telemetry_time = millis();
+    }
 
     // printf("%d %s %d \n", udp_client.remotePort(), udp_client.remoteIP().toString(), packer.size());
 
