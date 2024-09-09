@@ -17,7 +17,7 @@
 #include "LowpassFilter.hpp"
 #include "PositionSensor.hpp"
 
-#define A
+#define B
 #define ESP32_POE_ISO
 #define USE_ETH
 
@@ -378,6 +378,7 @@ void loop()
             }
         }
         udp.flush();
+        unpacker.clear();
 
     }
 
@@ -398,6 +399,8 @@ void loop()
         telemetry["tilt_sens_f"] = tilt_sensor.filtered_val;
         telemetry["tilt_sens_state"] = tilt_sensor.state;
         // telemetry["tilt_sens_position"] = tilt_sensor.last_fixed_position;
+        //telemetry["mem"] = esp_get_free_heap_size();
+        //telemetry["contig"] = heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT);
 
         packer.clear();
         packer.serialize_arduinojson(telemetry);
@@ -407,7 +410,6 @@ void loop()
         udp.endPacket();
         last_telemetry_time = millis();
     }
-
     // printf("%d %s %d \n", udp_client.remotePort(), udp_client.remoteIP().toString(), packer.size());
 
     // printf("%f %fHz %d \n", pan_in, pan_speed, res);

@@ -11,6 +11,10 @@ using System.Linq;
 using System.Drawing.Text;
 using MessagePack.Resolvers;
 using System.Net.NetworkInformation;
+using UnityEngine.UIElements;
+using System.Threading.Tasks;
+using System.Threading;
+using UnityEditor.PackageManager;
 
 [MessagePackObject]
 public class UdpMsg
@@ -44,6 +48,7 @@ public class PantiltRobot : MonoBehaviour
     public GameObject lookatTarget;
 
     public float lookAtAccel = 20.0f;
+    public float resumeAccel = 20.0f;
 
     private readonly UdpClient udp_client = new();
 
@@ -51,10 +56,11 @@ public class PantiltRobot : MonoBehaviour
     private Transform pan_tr;
     private Transform tilt_tr;
 
+    public Vector2 lastAnimatedPanTilt = new(0, 0);
+
+
     [System.NonSerialized]
     public bool isLiveTracking = false;
-
-
 
     public enum UdpCommands
     {
@@ -66,10 +72,7 @@ public class PantiltRobot : MonoBehaviour
     }
 
     // Start is called before the first frame update
-    void Start()
-    {
-        // ProcessCurves();
-    }
+    void Start() { }
 
     // Update is called once per frame
     void Update()
@@ -85,8 +88,14 @@ public class PantiltRobot : MonoBehaviour
         {
             var target = lookatTarget.transform.position;
 
-            if ((target - eye.position).magnitude > 0.0)
+            var delta = target - eye.position;
+            if (delta.x*delta.x + delta.z*delta.z > 0.3*0.3)
             {
+
+                //transform.worldToLocalMatrix.MultiplyPoint(target);
+                var eyeTarget = eye.worldToLocalMatrix.MultiplyPoint(target);
+                var localEyePos = eye.worldToLocalMatrix.MultiplyPoint(eye.position);
+
                 var lookAt = Matrix4x4.LookAt(eye.position, target, Vector3.up);
 
                 var euler = lookAt.rotation.eulerAngles;
@@ -94,10 +103,10 @@ public class PantiltRobot : MonoBehaviour
                 tilt = -euler[0];
                 if (tilt < -180)
                     tilt += 360;
-                pan = euler[1];
+                pan = euler[1] + transform.localEulerAngles.y;
                 if (pan > 180)
                     pan -= 360;
-                // print($"{euler} -> {pan} {tilt}");
+                //print($"{euler} -> {pan} {tilt}");
             }
         }
 
@@ -105,25 +114,62 @@ public class PantiltRobot : MonoBehaviour
         tilt_tr.localEulerAngles = new Vector3(tilt, 0, 0);
     }
 
-    public void StartLiveTracking()
+    public void StartTargetTracking()
     {
-        // if (lookatTarget == null)
-        //     return;
-        
-        // var anim = transform.parent.GetComponent<Animation>();
-        // anim.Stop();
+        if (!enabled) return;
+        if (lookatTarget == null)
+            return;
 
-        isLiveTracking = true;
-        InvokeRepeating(nameof(LiveTrackingMoveUDP), 0.0f, 0.2f);
+        // lastAnimatedPanTilt = new Vector2(pan, tilt);
+        StartSendContinouous();
     }
 
-    public void StopLiveTracking()
+    public async Task StopTargetTracking(CancellationToken cancel)
+    {
+        if (!enabled) return;
+
+        StopSendContinouous();
+        lookatTarget = null;
+
+        await MoveToPositionAsync(lastAnimatedPanTilt, resumeAccel, cancel);
+    }
+
+    async Task MoveToPositionAsync(Vector2 panTilt, float accel, CancellationToken cancel)
+    {
+        var delta = new Vector2(pan, tilt) - panTilt;
+        float t_pan = CalcTimeForMove(pan - panTilt[0], accel);
+        float t_tilt = CalcTimeForMove(tilt - panTilt[1], accel);
+
+        float pan_accel, tilt_accel;
+        if (t_pan >= t_tilt)
+        {
+            pan_accel = accel;
+            tilt_accel = CalcAccelForMove(tilt - panTilt[1], t_pan);
+        }
+        else
+        {
+            pan_accel = CalcAccelForMove(pan - panTilt[0], t_tilt);
+            tilt_accel = accel;
+        }
+        pan = panTilt.x;
+        tilt = panTilt.y;
+        GetComponentInParent<TwoRobots>().ReadPanTilt(this);
+
+        MoveUDP(pan_accel, tilt_accel);
+
+        Debug.Log($"moveto anim: {delta}, duration: {Math.Max(t_pan, t_tilt)}");
+        await Task.Delay((int)Math.Floor(Mathf.Max(t_pan, t_tilt) * 1000), cancel);
+    }
+
+    public void StartSendContinouous()
+    {
+        isLiveTracking = true;
+        InvokeRepeating(nameof(LiveTrackingMoveUDP), 0.0f, 0.05f);
+    }
+
+    public void StopSendContinouous()
     {
         CancelInvoke(nameof(LiveTrackingMoveUDP));
-        
-        // var anim = GetComponent<Animation>();
-        // anim.Play();
-
         isLiveTracking = false;
     }
 
@@ -132,19 +178,32 @@ public class PantiltRobot : MonoBehaviour
         MoveUDP(lookAtAccel);
     }
 
-    public void MoveUDP(float accel = 20)
+    public void MoveUDP(float panAccel, float tiltAccel)
     {
         // pan = pan_tr.localEulerAngles.z;
         // tilt = tilt_tr.localEulerAngles.x;
 
         // var tilt_t = tilt;
         // if (udp_address == "pantilt-robot_b.hq.bitwaescherei.net") { tilt_t = -tilt_t; }
-        var msg = new UdpMsg((byte)UdpCommands.PT_Acceleration, new float[] { pan, tilt, accel, accel });
+
+        if (Math.Abs(pan) > 360 || Math.Abs(tiltAccel) > 360 || Math.Abs(panAccel) > 100 || Math.Abs(tiltAccel) > 100)
+        {
+            Debug.LogError($"LIMIT {pan} {tilt} {panAccel} {tiltAccel}");
+            return;
+        }
+
+
+        var msg = new UdpMsg((byte)UdpCommands.PT_Acceleration, new float[] { pan, tilt, panAccel, tiltAccel });
 
         var dgram = MessagePackSerializer.Serialize(msg);
-        var json = MessagePackSerializer.ConvertToJson(dgram);
-        print(json);
+        //var json = MessagePackSerializer.ConvertToJson(dgram);
+        //print(json);
         udp_client.Send(dgram, dgram.Length, udp_address, udp_port);
+    }
+
+    public void MoveUDP(float accel = 20)
+    {
+        MoveUDP(accel, accel);
     }
 
     public void Home()
@@ -159,8 +218,18 @@ public class PantiltRobot : MonoBehaviour
     {
         var dgram = MessagePackSerializer.Serialize(msg);
         var json = MessagePackSerializer.ConvertToJson(dgram);
-        print(json);
+        // print(json);
         udp_client.Send(dgram, dgram.Length, udp_address, udp_port);
+    }
+
+    public static float CalcAccelForMove(float dist, float t)
+    {
+        return Mathf.Abs(dist) / (t * t / 4);
+    }
+
+    public static float CalcTimeForMove(float dist, float accel)
+    {
+        return Mathf.Sqrt(4 * Mathf.Abs(dist) / accel);
     }
 
     // public void ProcessCurves()
@@ -214,8 +283,6 @@ public class PantiltRobot : MonoBehaviour
     // }
 }
 
-
-
 #if UNITY_EDITOR
 [CustomEditor(typeof(PantiltRobot)), CanEditMultipleObjects]
 public class PantiltEditor : Editor
@@ -237,16 +304,16 @@ public class PantiltEditor : Editor
 
         if (!target.isLiveTracking)
         {
-            if (GUILayout.Button("Start Live Move"))
+            if (GUILayout.Button("START live move"))
             {
-                target.StartLiveTracking();
+                target.StartSendContinouous();
             }
         }
         else
         {
-            if (GUILayout.Button("STOP Live Move"))
+            if (GUILayout.Button("STOP live move"))
             {
-                target.StopLiveTracking();
+                target.StopSendContinouous();
             }
         }
     }
