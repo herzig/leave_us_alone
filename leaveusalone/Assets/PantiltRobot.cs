@@ -14,26 +14,6 @@ using System.Net.NetworkInformation;
 using UnityEngine.UIElements;
 using System.Threading.Tasks;
 using System.Threading;
-using UnityEditor.PackageManager;
-
-[MessagePackObject]
-public class UdpMsg
-{
-
-    [Key(0)]
-    public byte cmd;
-    [Key(1)]
-    public float[] data;
-
-    public UdpMsg() { }
-
-    public UdpMsg(byte cmd, float[] data)
-    {
-        this.cmd = cmd;
-        this.data = data;
-    }
-}
-
 
 [ExecuteAlways]
 public class PantiltRobot : MonoBehaviour
@@ -49,6 +29,7 @@ public class PantiltRobot : MonoBehaviour
 
     public float lookAtAccel = 20.0f;
     public float resumeAccel = 20.0f;
+    public float resumeExtraWait = 1.0f;
 
     private readonly UdpClient udp_client = new();
 
@@ -140,25 +121,25 @@ public class PantiltRobot : MonoBehaviour
         float t_pan = CalcTimeForMove(pan - panTilt[0], accel);
         float t_tilt = CalcTimeForMove(tilt - panTilt[1], accel);
 
-        float pan_accel, tilt_accel;
-        if (t_pan >= t_tilt)
-        {
-            pan_accel = accel;
-            tilt_accel = CalcAccelForMove(tilt - panTilt[1], t_pan);
-        }
-        else
-        {
-            pan_accel = CalcAccelForMove(pan - panTilt[0], t_tilt);
-            tilt_accel = accel;
-        }
+        // float pan_accel, tilt_accel;
+        // if (t_pan >= t_tilt)
+        // {
+        //     pan_accel = accel;
+        //     tilt_accel = CalcAccelForMove(tilt - panTilt[1], t_pan);
+        // }
+        // else
+        // {
+        //     pan_accel = CalcAccelForMove(pan - panTilt[0], t_tilt);
+        //     tilt_accel = accel;
+        // }
         pan = panTilt.x;
         tilt = panTilt.y;
         GetComponentInParent<TwoRobots>().ReadPanTilt(this);
 
-        MoveUDP(pan_accel, tilt_accel);
+        MoveUDP(accel, accel);
 
-        Debug.Log($"moveto anim: {delta}, duration: {Math.Max(t_pan, t_tilt)}");
-        await Task.Delay((int)Math.Floor(Mathf.Max(t_pan, t_tilt) * 1000), cancel);
+        Debug.Log($"moveto anim: {delta}, duration: {Math.Max(t_pan, t_tilt) + resumeExtraWait}");
+        await Task.Delay((int)Math.Floor((Mathf.Max(t_pan, t_tilt) + resumeExtraWait) * 1000), cancel);
     }
 
     public void StartSendContinouous()
@@ -192,8 +173,10 @@ public class PantiltRobot : MonoBehaviour
             return;
         }
 
-
         var msg = new UdpMsg((byte)UdpCommands.PT_Acceleration, new float[] { pan, tilt, panAccel, tiltAccel });
+        // var msg = ScriptableObject.CreateInstance<UdpMsg>();
+        // msg.cmd = (byte)UdpCommands.PT_Acceleration;
+        // msg.data = new float[] { pan, tilt, panAccel, tiltAccel };
 
         var dgram = MessagePackSerializer.Serialize(msg);
         //var json = MessagePackSerializer.ConvertToJson(dgram);
@@ -208,6 +191,9 @@ public class PantiltRobot : MonoBehaviour
 
     public void Home()
     {
+        //var msg = ScriptableObject.CreateInstance<UdpMsg>();
+        //msg.cmd = (byte)UdpCommands.Home;
+        //msg.data = new float[] { 0, 0 };
         var msg = new UdpMsg((byte)UdpCommands.Home, new float[] {0, 0});
         var dgram = MessagePackSerializer.Serialize(msg);
         print(MessagePackSerializer.ConvertToJson(dgram));

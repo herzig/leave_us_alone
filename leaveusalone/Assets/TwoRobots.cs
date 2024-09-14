@@ -12,6 +12,7 @@ public class TwoRobots : MonoBehaviour
     public PantiltRobot camA;
     public PantiltRobot camB;
 
+    public List<KeyframeEventArgs> keyframes; 
     public float aPan;
     public float aTilt;
     public float bPan;
@@ -28,7 +29,7 @@ public class TwoRobots : MonoBehaviour
 
 
     // Start is called before the first frame update
-    void Start()
+    void Start() 
     {
 #if UNITY_EDITOR
         ProcessCurves();
@@ -168,7 +169,13 @@ public class TwoRobots : MonoBehaviour
         }
     }
 
-    public void OnKeyframe(KeyframeEventArgs e)
+    public void OnKeyframe(int id)
+    {
+        print($"n keys: {keyframes.Count} id={id} ");
+        ProcessKeyframe(keyframes[id]);
+    }
+
+    public void ProcessKeyframe(KeyframeEventArgs e)
     {
         if (e.target.isActiveAndEnabled)
         {
@@ -176,14 +183,8 @@ public class TwoRobots : MonoBehaviour
         }
     }
 
-    public class KeyframeEventArgs : ScriptableObject
-    {
-        public UdpMsg udpMsg;
-        public PantiltRobot target;
-        public Keyframe keyframe;
-    }
 
-#if UNITY_EDITOR
+    // #if UNITY_EDITOR
     //     public void ProcessCurvesAnimator()
     //     {
     //         var animator = GetComponent<Animator>();
@@ -220,10 +221,13 @@ public class TwoRobots : MonoBehaviour
     // 
     //     }
 
+#if UNITY_EDITOR
     public void ProcessCurves()
     {
         //var animation = GetComponent<Animation>();
+        if (keyframes == null) keyframes = new List<KeyframeEventArgs>();
 
+        keyframes.Clear();
         var clips = AnimationUtility.GetAnimationClips(gameObject);
 
         foreach (var clip in clips)
@@ -256,8 +260,7 @@ public class TwoRobots : MonoBehaviour
             // var pan_binding = bindings.Single(b => b.propertyName == "pan");
             // var tilt_binding = bindings.Single(b => b.propertyName == "tilt");
         }
-
-
+        EditorUtility.SetDirty(this);
     }
 
     public void AddAnimationEvents(AnimationClip clip, EditorCurveBinding curveBinding, PantiltRobot robot, UdpCommands cmd, List<AnimationEvent> allEvents)
@@ -279,17 +282,18 @@ public class TwoRobots : MonoBehaviour
             var eventArgs = ScriptableObject.CreateInstance<KeyframeEventArgs>();
 
             var pos = next.value;
-            // if (cmd == UdpCommands.MoveTilt_Accel && udp_address == "pantilt-robot_b.hq.bitwaescherei.net") { pos = -pos; }
-            // if (cmd == UdpCommands.MoveTilt_Accel) { pos = -pos; }
+            
             eventArgs.udpMsg = new UdpMsg((byte)cmd, new float[] { pos, acc });
             eventArgs.keyframe = current;
             eventArgs.target = robot;
             var evt = new AnimationEvent
             {
+                //objectReferenceParameter = this,
+                time = curve.keys[i - 1].time,
+                intParameter = keyframes.Count,
                 functionName = "OnKeyframe",
-                objectReferenceParameter = eventArgs,
-                time = curve.keys[i - 1].time
             };
+            keyframes.Add(eventArgs);
             allEvents.Add(evt);
         }
     }

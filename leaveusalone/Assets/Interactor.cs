@@ -9,11 +9,16 @@ public class Interactor : MonoBehaviour
     public BodySourceManager bodyManager;
     public TwoRobots cams;
     public BoxCollider interactiveBox;
+    public float smoothTime = 0.05f;
+    public JointType focusJoint = JointType.Head;
+    public float deadband_dist = 0.1f;
 
-    private GameObject target { get { return cams.target; } }
+    private GameObject Target { get { return cams.target; } }
 
 
     private ulong currentTrackingId;
+
+    private Vector3 currentVelocity = Vector3.zero;
 
 
     void Start()
@@ -35,7 +40,7 @@ public class Interactor : MonoBehaviour
 
             if (!b.IsTracked) continue;
 
-            var joint = b.Joints[JointType.Neck];
+            var joint = b.Joints[focusJoint];
             var pos = BodySourceView.GetVector3FromJoint(joint);
             pos = bodyManager.transform.localToWorldMatrix.MultiplyPoint(pos);
 
@@ -52,8 +57,14 @@ public class Interactor : MonoBehaviour
             // print($"body {b.TrackingId} head: {head.Position.X} {head.Position.Y} {head.Position.Z}");
             //var pos = new Vector3(head.Position.X, head.Position.Y, head.Position.Z);
             //target.transform.position = pos;
-            cams.target.transform.position = trackedPositions[0];
-            
+
+            var newTarget = trackedPositions[0];
+
+            var diff = cams.target.transform.position - newTarget;
+            if (diff.magnitude > deadband_dist)
+            {
+                cams.target.transform.position = Vector3.SmoothDamp(cams.target.transform.position, trackedPositions[0], ref currentVelocity, smoothTime);
+            }
 
             if (!cams.IsTracking)
                 cams.StartTracking();

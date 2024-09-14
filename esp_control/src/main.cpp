@@ -17,7 +17,7 @@
 #include "LowpassFilter.hpp"
 #include "PositionSensor.hpp"
 
-#define B
+#define A
 #define ESP32_POE_ISO
 #define USE_ETH
 
@@ -386,18 +386,20 @@ void loop()
     {
         telemetry["timestamp"] = millis()/1000.0f;
         telemetry["pan"] = pan_stepper->getCurrentPosition() * STEPS2DEG;
+        telemetry["pan_t"] = pan_stepper->targetPos() * STEPS2DEG;
         telemetry["pan_accel"] = pan_stepper->getAcceleration();
         telemetry["tilt"] = tilt_stepper->getCurrentPosition() * STEPS2DEG;
+        telemetry["tilt_t"] = tilt_stepper->targetPos() * STEPS2DEG;
         telemetry["tilt_accel"] = tilt_stepper->getAcceleration();
 
         // telemetry["pan_sens"] = pan_sensor.raw_val;
-        telemetry["pan_sens_f"] = pan_sensor.filtered_val;
-        telemetry["pan_sens_state"] = pan_sensor.state;
+        // telemetry["pan_sens_f"] = pan_sensor.filtered_val;
+        // telemetry["pan_sens_state"] = pan_sensor.state;
         // telemetry["pan_sens_position"] = tilt_sensor.last_fixed_position;
 
         // telemetry["tilt_sens"] = tilt_sensor.raw_val;
-        telemetry["tilt_sens_f"] = tilt_sensor.filtered_val;
-        telemetry["tilt_sens_state"] = tilt_sensor.state;
+        // telemetry["tilt_sens_f"] = tilt_sensor.filtered_val;
+        // telemetry["tilt_sens_state"] = tilt_sensor.state;
         // telemetry["tilt_sens_position"] = tilt_sensor.last_fixed_position;
         //telemetry["mem"] = esp_get_free_heap_size();
         //telemetry["contig"] = heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT);
