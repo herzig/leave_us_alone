@@ -171,7 +171,7 @@ public class TwoRobots : MonoBehaviour
 
     public void OnKeyframe(int id)
     {
-        print($"n keys: {keyframes.Count} id={id} ");
+        // print($"n keys: {keyframes.Count} id={id} ");
         ProcessKeyframe(keyframes[id]);
     }
 
@@ -183,43 +183,6 @@ public class TwoRobots : MonoBehaviour
         }
     }
 
-
-    // #if UNITY_EDITOR
-    //     public void ProcessCurvesAnimator()
-    //     {
-    //         var animator = GetComponent<Animator>();
-    //         var clipInfos = animator.GetCurrentAnimatorClipInfo(0);
-    // 
-    //         var state = animator.GetCurrentAnimatorStateInfo(0);
-    //         print(state.fullPathHash);
-    // 
-    //         foreach (var clipInfo in clipInfos)
-    //         {
-    //             print(clipInfo.clip.name);
-    // 
-    //             var bindings = AnimationUtility.GetCurveBindings(clipInfo.clip);
-    // 
-    //             foreach (var binding in bindings)
-    //             {
-    // 
-    //                 var events = new List<AnimationEvent>();
-    //                 if (binding.propertyName == "pan") {
-    //                    AddAnimationEvents(clipInfo.clip, binding, UdpCommands.MovePan_Accel, events);
-    //                 }
-    //                 if (binding.propertyName == "tilt") {
-    //                     AddAnimationEvents(clipInfo.clip, binding, UdpCommands.MoveTilt_Accel, events);
-    //                 }
-    //                 AnimationUtility.SetAnimationEvents(clipInfo.clip, events.ToArray());
-    //             }
-    // 
-    //             // var pan_binding = bindings.Single(b => b.path == "pan");
-    //             // var pan_binding = bindings.Single(b => b.propertyName == "pan");
-    //             // var tilt_binding = bindings.Single(b => b.propertyName == "tilt");
-    //         }
-    // 
-    // 
-    // 
-    //     }
 
 #if UNITY_EDITOR
     public void ProcessCurves()
