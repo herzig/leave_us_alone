@@ -31,6 +31,8 @@ public class PantiltRobot : MonoBehaviour
     public float resumeAccel = 20.0f;
     public float resumeExtraWait = 1.0f;
 
+    public float waitBeforeResume = 2;
+
     private readonly UdpClient udp_client = new();
 
     private Transform eye;
@@ -110,8 +112,9 @@ public class PantiltRobot : MonoBehaviour
         if (!enabled) return;
 
         StopSendContinouous();
-        lookatTarget = null;
 
+        await Task.Delay((int)(waitBeforeResume * 1000));
+        lookatTarget = null;
         await MoveToPositionAsync(lastAnimatedPanTilt, resumeAccel, cancel);
     }
 

@@ -11,18 +11,23 @@ public class Interactor : MonoBehaviour
     public BoxCollider interactiveBox;
     public float smoothTime = 0.05f;
     public JointType focusJoint = JointType.Head;
-    public float deadband_dist = 0.1f;
+    public float deadband_dist = 0.15f;
 
     private GameObject Target { get { return cams.target; } }
 
 
-    private ulong currentTrackingId;
+    public int currentTrackingIndex = 0;
+    public float trackingTime = 0;
+    public float trackingDuration = 8;
+
 
     private Vector3 currentVelocity = Vector3.zero;
 
 
     void Start()
     {
+        trackingTime = 0;
+        currentTrackingIndex = 0;
     }
 
     void Update()
@@ -53,26 +58,39 @@ public class Interactor : MonoBehaviour
 
         if (trackedBodies.Count > 0)
         {
+            trackingTime += Time.deltaTime;
+            if (trackingTime > trackingDuration)
+            {
+                currentTrackingIndex = Mathf.Min(currentTrackingIndex + 1, trackedBodies.Count - 1);
+                trackingTime = 0;
+            }
 
-            // print($"body {b.TrackingId} head: {head.Position.X} {head.Position.Y} {head.Position.Z}");
-            //var pos = new Vector3(head.Position.X, head.Position.Y, head.Position.Z);
-            //target.transform.position = pos;
+            if (trackedPositions.Count -1 < currentTrackingIndex)
+            {
+                currentTrackingIndex = 0;
+            }
 
-            var newTarget = trackedPositions[0];
+            var newTarget = trackedPositions[currentTrackingIndex];
 
             var diff = cams.target.transform.position - newTarget;
             if (diff.magnitude > deadband_dist)
             {
-                cams.target.transform.position = Vector3.SmoothDamp(cams.target.transform.position, trackedPositions[0], ref currentVelocity, smoothTime);
+                cams.target.transform.position = Vector3.SmoothDamp(cams.target.transform.position, newTarget, ref currentVelocity, smoothTime);
             }
 
             if (!cams.IsTracking)
+            {
                 cams.StartTracking();
+                trackingTime = 0;
+            }
         }
         else
         {
             if (cams.IsTracking)
+            {
                 cams.StopTracking();
+                trackingTime = 0;
+            }
         }
 
         

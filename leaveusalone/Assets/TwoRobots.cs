@@ -18,6 +18,8 @@ public class TwoRobots : MonoBehaviour
     public float bPan;
     public float bTilt;
 
+    public string[] resumeAnimationStates;
+
     public GameObject target;
 
     private Task resumeTask = null;
@@ -145,7 +147,8 @@ public class TwoRobots : MonoBehaviour
         if (!cancel.IsCancellationRequested)
         {
             var anim = GetComponent<Animator>();
-            anim.Play("aaluege", 0);
+            var state = resumeAnimationStates[UnityEngine.Random.Range(0, resumeAnimationStates.Length)];
+            anim.Play(state, 0);
             anim.speed = 1;
             resumeTask = null;
             Debug.Log($"all done & resumed animation");
@@ -171,7 +174,6 @@ public class TwoRobots : MonoBehaviour
 
     public void OnKeyframe(int id)
     {
-        print($"n keys: {keyframes.Count} id={id} ");
         ProcessKeyframe(keyframes[id]);
     }
 
@@ -323,6 +325,13 @@ public class RobotsEditor : Editor
             {
                 target.StopTracking();
             }
+        }
+        if (GUILayout.Button("Goto base pos"))
+        {
+            target.aPan = target.camA.lastAnimatedPanTilt[0];
+            target.aTilt = target.camA.lastAnimatedPanTilt[1];
+            target.bPan = target.camB.lastAnimatedPanTilt[0];
+            target.bTilt = target.camB.lastAnimatedPanTilt[1];
         }
         if (GUILayout.Button("Move UDP"))
         {
