@@ -1,0 +1,8 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
+    <Style src="project://database/Assets/Editor/MyUI.uss?fileID=7433441132597879392&amp;guid=201b12edb19e1394da7f3f96908eeab8&amp;type=3#MyUI" />
+    <ui:Toggle label="Interactor" name="interactorToggle" style="height: 25px; width: 246px; flex-direction: row;" />
+    <ui:Toggle label="Animator" name="animatorToggle" />
+    <ui:Button text="home a..." parse-escape-sequences="true" display-tooltip-when-elided="true" name="homeAButton" style="height: 16px; width: 115px;" />
+    <ui:Button text="home b..." parse-escape-sequences="true" display-tooltip-when-elided="true" name="homeBButton" style="width: 115px; height: 4px;" />
+    <ui:Button text="Goto anim base" parse-escape-sequences="true" display-tooltip-when-elided="true" name="gotoBaseButton" style="height: 28px; width: 117px;" />
+</ui:UXML>

@@ -61,7 +61,9 @@ public class Interactor : MonoBehaviour
             trackingTime += Time.deltaTime;
             if (trackingTime > trackingDuration)
             {
-                currentTrackingIndex = Mathf.Min(currentTrackingIndex + 1, trackedBodies.Count - 1);
+                currentTrackingIndex++;
+                if (currentTrackingIndex < trackedBodies.Count - 1)
+                    currentTrackingIndex = 0;
                 trackingTime = 0;
             }
 
@@ -94,5 +96,11 @@ public class Interactor : MonoBehaviour
         }
 
         
+    }
+
+    private void OnDisable()
+    {
+        cams.StopTracking();
+        trackingTime = 0;
     }
 }

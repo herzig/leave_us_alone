@@ -113,7 +113,7 @@ public class PantiltRobot : MonoBehaviour
 
         StopSendContinouous();
 
-        await Task.Delay((int)(waitBeforeResume * 1000));
+        await Task.Delay((int)(waitBeforeResume * 1000), cancel);
         lookatTarget = null;
         await MoveToPositionAsync(lastAnimatedPanTilt, resumeAccel, cancel);
     }
@@ -141,8 +141,11 @@ public class PantiltRobot : MonoBehaviour
 
         MoveUDP(accel, accel);
 
-        Debug.Log($"moveto anim: {delta}, duration: {Math.Max(t_pan, t_tilt) + resumeExtraWait}");
-        await Task.Delay((int)Math.Floor((Mathf.Max(t_pan, t_tilt) + resumeExtraWait) * 1000), cancel);
+        var extra = resumeExtraWait;
+        if (Math.Max(t_pan, t_tilt) < extra)
+            extra = 0;
+        Debug.Log($"moveto anim: {delta}, duration: {Math.Max(t_pan, t_tilt) + extra}");
+        await Task.Delay((int)Math.Floor((Mathf.Max(t_pan, t_tilt) + extra) * 1000), cancel);
     }
 
     public void StartSendContinouous()

@@ -50,7 +50,7 @@ public class TwoRobots : MonoBehaviour
             Debug.Log("wait for previous task...");
             try
             {
-                resumeTask.Wait(); // should be very quick if not instant
+                resumeTask.Wait(8000); // should be very quick if not instant
             }
             catch (Exception e)
             {
@@ -137,6 +137,20 @@ public class TwoRobots : MonoBehaviour
 
     }
 
+    public void StartAnimation()
+    {
+        var anim = GetComponent<Animator>();
+        var state = resumeAnimationStates[UnityEngine.Random.Range(0, resumeAnimationStates.Length)];
+        anim.Play(state, 0);
+        anim.speed = 1;
+    }
+
+    public void PauseAnimation()
+    {
+        var anim = GetComponent<Animator>();
+        anim.speed = 0;
+    }
+
     private async Task ResumeAnimation(CancellationToken cancel)
     {
         var a = camA.StopTargetTracking(cancel);
@@ -174,10 +188,6 @@ public class TwoRobots : MonoBehaviour
 
     public void OnKeyframe(int id)
     {
-<<<<<<< HEAD
-=======
-        // print($"n keys: {keyframes.Count} id={id} ");
->>>>>>> 901853a1a6ed6df90e47cfd9206e2f0bb4a592af
         ProcessKeyframe(keyframes[id]);
     }
 
