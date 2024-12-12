@@ -31,6 +31,7 @@ public class UIScript : MonoBehaviour
 
         cams = GameObject.Find("cams");
         interactor = GameObject.Find("Interactor").GetComponent<Interactor>();
+
         interactorToggle.value = interactor.gameObject.activeInHierarchy;
 
         interactorToggle.RegisterCallback<ChangeEvent<bool>>(InteractorToggleChanged);

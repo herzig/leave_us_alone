@@ -204,6 +204,10 @@ public class PantiltRobot : MonoBehaviour
         var dgram = MessagePackSerializer.Serialize(msg);
         print(MessagePackSerializer.ConvertToJson(dgram));
         udp_client.Send(dgram, dgram.Length, udp_address, udp_port);
+
+        pan = 0;
+        tilt = 0;
+        GetComponentInParent<TwoRobots>().ReadPanTilt(this);
     }
     
     public void SendUdpMsg(UdpMsg msg)
