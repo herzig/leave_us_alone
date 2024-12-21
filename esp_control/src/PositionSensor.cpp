@@ -12,7 +12,7 @@ PositionSensor::PositionSensor(/* args */)
 {
 }
 
-void PositionSensor::update(float  ain_value, int32_t current_speed)
+void PositionSensor::update(float ain_value, int32_t current_speed)
 {
     raw_val = ain_value;
     uint8_t prev_state = state;

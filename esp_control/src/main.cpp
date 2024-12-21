@@ -17,7 +17,7 @@
 #include "LowpassFilter.hpp"
 #include "PositionSensor.hpp"
 
-#define A
+#define B
 #define ESP32_POE_ISO
 #define USE_ETH
 
@@ -94,7 +94,7 @@ const float MAX_SPEED = 100.0f;
 // WiFiServer tcp(TCP_PORT);
 //NetworkServer server;
 
-StaticJsonDocument<1500> telemetry;
+StaticJsonDocument<2000> telemetry;
 MsgPack::Packer packer;
 
 enum MSG_COMMAND { HOME = 0, PT = 1, PT_ACCEL = 2, PAN_ACCEL = 3, TILT_ACCEL = 4};
@@ -150,25 +150,25 @@ FastAccelStepper* init_stepper(uint8_t pulse_pin, uint8_t dir_pin, uint8_t en_pi
 void home_axis(FastAccelStepper* stepper, PositionSensor* sensor)
 {
     printf("start home\n");
-
     stepper->setSpeedInHz(9 * DEG2STEPS);
     delay(5);
     stepper->runBackward();
     while (sensor->has_changed_state == false) { delay(2); }
-    stepper->forceStop();
+    stepper->forceStopAndNewPosition(sensor->last_fixed_position * DEG2STEPS);
     sensor->reset();
+    
 
-    printf("one step done %f\n", sensor->last_fixed_position);
-    if (sensor->last_fixed_position != 0)
-    {
-        stepper->setSpeedInHz(9 * DEG2STEPS);
-        delay(5);
-        stepper->runBackward();
-        while (sensor->has_changed_state == false) { delay(2); }
-    }
-    stepper->forceStopAndNewPosition(0);
+    // printf("one step done %f\n", sensor->last_fixed_position);
+    // if (sensor->last_fixed_position != 0)
+    // {
+    //     stepper->setSpeedInHz(9 * DEG2STEPS);
+    //     delay(5);
+    //     stepper->runBackward();
+    //     while (sensor->has_changed_state == false) { delay(2); }
+    // }
+    // stepper->forceStopAndNewPosition(0);
 
-    printf("done home %f\n");
+    // printf("done home %f\n");
 }
 
 void set_speed_accel(FastAccelStepper* stepper, float speed, float accel)
@@ -386,21 +386,21 @@ void loop()
     {
         telemetry["timestamp"] = millis()/1000.0f;
         telemetry["pan"] = pan_stepper->getCurrentPosition() * STEPS2DEG;
-        telemetry["pan_t"] = pan_stepper->targetPos() * STEPS2DEG;
-        telemetry["pan_accel"] = pan_stepper->getAcceleration();
+        // telemetry["pan_t"] = pan_stepper->targetPos() * STEPS2DEG;
+        // telemetry["pan_accel"] = pan_stepper->getAcceleration();
         telemetry["tilt"] = tilt_stepper->getCurrentPosition() * STEPS2DEG;
-        telemetry["tilt_t"] = tilt_stepper->targetPos() * STEPS2DEG;
-        telemetry["tilt_accel"] = tilt_stepper->getAcceleration();
+        // telemetry["tilt_t"] = tilt_stepper->targetPos() * STEPS2DEG;
+        // telemetry["tilt_accel"] = tilt_stepper->getAcceleration();
 
-        // telemetry["pan_sens"] = pan_sensor.raw_val;
-        // telemetry["pan_sens_f"] = pan_sensor.filtered_val;
-        // telemetry["pan_sens_state"] = pan_sensor.state;
-        // telemetry["pan_sens_position"] = tilt_sensor.last_fixed_position;
+        //telemetry["pan_sens"] = pan_sensor.raw_val;
+        telemetry["pan_sens_f"] = pan_sensor.filtered_val;
+        telemetry["pan_sens_state"] = pan_sensor.state;
+        telemetry["pan_sens_position"] = pan_sensor.last_fixed_position;
 
         // telemetry["tilt_sens"] = tilt_sensor.raw_val;
-        // telemetry["tilt_sens_f"] = tilt_sensor.filtered_val;
-        // telemetry["tilt_sens_state"] = tilt_sensor.state;
-        // telemetry["tilt_sens_position"] = tilt_sensor.last_fixed_position;
+        telemetry["tilt_sens_f"] = tilt_sensor.filtered_val;
+        telemetry["tilt_sens_state"] = tilt_sensor.state;
+        telemetry["tilt_sens_position"] = tilt_sensor.last_fixed_position;
         //telemetry["mem"] = esp_get_free_heap_size();
         //telemetry["contig"] = heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT);
 
