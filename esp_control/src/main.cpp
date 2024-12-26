@@ -157,7 +157,6 @@ void home_axis(FastAccelStepper* stepper, PositionSensor* sensor)
     stepper->forceStopAndNewPosition(sensor->last_fixed_position * DEG2STEPS);
     sensor->reset();
     
-
     // printf("one step done %f\n", sensor->last_fixed_position);
     // if (sensor->last_fixed_position != 0)
     // {
